@@ -63,7 +63,7 @@ def train(name, load, lrate, weight_decay, workers, device, validation, ground_t
     def output_preprocess(output):
         o, target = output
         o = torch.sigmoid(o)
-        o = denoising_hysteresis_thresh(o.detach().squeeze().cpu().numpy(), 0.3, 0.5, 2.5)
+        o = denoising_hysteresis_thresh(o.detach().squeeze().cpu().numpy(), 0.8, 0.9, 2.5)
         return torch.from_numpy(o.astype('f')).unsqueeze(0).unsqueeze(0).to(device), target.double().to(device)
 
     trainer = create_supervised_trainer(model, opti, criterion, device=device, non_blocking=True)
@@ -84,7 +84,7 @@ def train(name, load, lrate, weight_decay, workers, device, validation, ground_t
     def log_validation_results(engine):
         evaluator.run(val_data_loader)
         metrics = evaluator.state.metrics
-        progress_bar.log_message('eval results - epoch {} loss: {:.2f} accuracy: {:.2f} recall: {:.2f} precision {:.2f}'.format(engine.state.epoch,
+        progress_bar.log_message('eval results - epoch {} loss: {:.4f} accuracy: {:.4f} recall: {:.4f} precision {:.4f}'.format(engine.state.epoch,
                                                                                                                    metrics['loss'],
                                                                                                                    metrics['accuracy'],
                                                                                                                    metrics['recall'],
