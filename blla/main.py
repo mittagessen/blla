@@ -40,7 +40,7 @@ def compute_features(load, device, ground_truth):
             with Image.open(p) as img:
                 click.echo(p)
                 with open(path.splitext(path.splitext(p)[0])[0] + '.feat', 'wb') as fp:
-                    i = tfs(imgs).unsqueeze(0).to(device)
+                    i = tfs(img).unsqueeze(0).to(device)
                     o = net(i).squeeze()
                     torch.save(o, fp)
 
