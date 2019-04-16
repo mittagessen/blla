@@ -6,23 +6,44 @@ import json
 import click
 import torch
 
+from os import path
 from torch import nn, optim
 from PIL import Image, ImageDraw
 from torchvision import transforms
 from torch.utils.data import DataLoader
 
-from ignite.contrib.handlers import ProgressBar
-from ignite.handlers import ModelCheckpoint, TerminateOnNan
-from ignite.metrics import Accuracy, Precision, Recall, RunningAverage, Loss
-from ignite.engine import Engine, Events, create_supervised_trainer, create_supervised_evaluator
-
-from blla.model import ResUNet
-from blla.dataset import BaselineSet
+from blla.model import VerticeNet, PolyLineNet, FeatureNet
+from blla.darknet import Darknet53
+from blla.dataset import InitialVertexDataset, VerticesDataset
 from blla.postprocess import denoising_hysteresis_thresh
 
 @click.group()
 def cli():
     pass
+
+@cli.command()
+@click.option('-i', '--load', default=None, type=click.Path(exists=True, readable=True), help='pretrained weights to load')
+@click.option('-d', '--device', default='cpu', help='pytorch device')
+@click.argument('ground_truth', nargs=1)
+def compute_features(load, device, ground_truth):
+    click.echo('instantiating darknet network')
+    dk = Darknet53().to(device)
+    click.echo('loading darknet weights')
+    dk.load_state_dict(torch.load(load, map_location=device))
+    click.echo('instantiating feature network')
+    net = FeatureNet(dk)
+
+    click.echo('writing features')
+    tfs = transforms.Compose([transforms.Resize(900), transforms.ToTensor(), transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
+    with torch.no_grad():
+        for p in glob.glob('{}/**/*.plain.png'.format(ground_truth), recursive=True):
+            with Image.open(p) as img:
+                click.echo(p)
+                with open(path.splitext(path.splitext(p)[0])[0] + '.feat', 'wb') as fp:
+                    o = net(tfs(img).unsqueeze(0)).squeeze()
+                    print(o.shape)
+                    torch.save(o, fp)
+
 
 @cli.command()
 @click.option('-n', '--name', default=None, help='prefix for checkpoint file names')
@@ -33,7 +54,7 @@ def cli():
 @click.option('-d', '--device', default='cpu', help='pytorch device')
 @click.option('-v', '--validation', default='val', help='validation set location')
 @click.argument('ground_truth', nargs=1)
-def train(name, load, lrate, weight_decay, workers, device, validation, ground_truth):
+def ivtrain(name, load, lrate, weight_decay, workers, device, validation, ground_truth):
 
     if not name:
         name = '{}_{}'.format(lrate, weight_decay)
@@ -41,9 +62,9 @@ def train(name, load, lrate, weight_decay, workers, device, validation, ground_t
 
     torch.set_num_threads(1)
 
-    train_set = BaselineSet(glob.glob('{}/**/*.seeds.png'.format(ground_truth), recursive=True))
+    train_set = InitialVertexDataset(glob.glob('{}/**/*.lines.json'.format(ground_truth), recursive=True))
     train_data_loader = DataLoader(dataset=train_set, num_workers=workers, batch_size=1, shuffle=True, pin_memory=True)
-    val_set = BaselineSet(glob.glob('{}/**/*.seeds.png'.format(validation), recursive=True))
+    val_set = InitialVertexDataset(glob.glob('{}/**/*.lines.json'.format(validation), recursive=True))
     val_data_loader = DataLoader(dataset=val_set, num_workers=workers, batch_size=1, pin_memory=True)
 
     click.echo('loading network')

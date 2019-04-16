@@ -4,86 +4,90 @@ import torch.nn.functional as F
 from torch import nn
 from torchvision import models
 
-
-def weight_init(m):
-    if isinstance(m, nn.Linear):
-        nn.init.xavier_uniform_(m.weight.data)
-        nn.init.constant_(m.bias.data, 0)
-    elif isinstance(m, nn.LSTM):
-        for p in m.parameters():
-            # weights
-            if p.data.dim() == 2:
-                nn.init.orthogonal_(p.data)
-            # initialize biases to 1 (jozefowicz 2015)
-            else:
-                nn.init.constant_(p.data[len(p)//4:len(p)//2], 1.0)
-    elif isinstance(m, nn.GRU):
-        for p in m.parameters():
-            nn.init.orthogonal_(p.data)
-    elif isinstance(m, nn.Conv2d):
-        nn.init.kaiming_uniform_(m.weight, nonlinearity='relu')
-        nn.init.constant_(m.bias, 0)
+from blla import darknet
 
 
-class UnetDecoder(nn.Module):
+class FeatureNet(nn.Module):
     """
-    U-Net decoder block with a convolution before upsampling.
+    Feature extraction from 53-layer darknet.
     """
-    def __init__(self, in_channels, inter_channels, out_channels):
+    def __init__(self, pretrained):
         super().__init__()
-        self.conv = nn.Conv2d(in_channels, inter_channels, kernel_size=3, padding=1)
-        self.deconv = nn.ConvTranspose2d(inter_channels, out_channels, 3, padding=1, stride=2)
-        self.norm_conv = nn.GroupNorm(32, inter_channels)
-        self.norm_deconv = nn.GroupNorm(32, out_channels)
-
-    def forward(self, x, output_size):
-        x = F.relu(self.norm_conv(self.conv(x)))
-        return F.relu(self.norm_deconv(self.deconv(x, output_size=output_size)))
-
-class ResUNet(nn.Module):
-    """
-    ResNet-34 encoder + U-Net decoder
-    """
-    def __init__(self, refine_encoder=False):
-        super().__init__()
-        self.resnet = models.resnet34(pretrained=True)
-        if not refine_encoder:
-            for param in self.resnet.parameters():
-                param.requires_grad = False
-
-        self.dropout = nn.Dropout(0.1)
-        # operating on map_4
-        self.upsample_4 = UnetDecoder(256, 256, 128)
-        # operating on cat(map_3, upsample_5(map_4))
-        self.upsample_3 = UnetDecoder(256, 128, 64)
-        self.upsample_2 = UnetDecoder(128, 64, 64)
-        self.upsample_1 = UnetDecoder(128, 64, 64)
-        self.squash = nn.Conv2d(64, 1, kernel_size=1)
-
-        self.nonlin = nn.Sigmoid()
-        #self.init_weights()
+        self.dk = pretrained.feat[:-1]
 
     def forward(self, inputs):
         siz = inputs.size()
-        x = self.resnet.conv1(inputs)
-        x = self.resnet.bn1(x)
-        map_1 = self.resnet.relu(x)
-        x = self.resnet.maxpool(x)
-        map_2 = self.resnet.layer1(x)
-        map_3 = self.resnet.layer2(map_2)
-        map_4 = self.resnet.layer3(map_3)
+        # downsampled by 2
+        ds_2 = self.dk[:7](inputs)
+        ds_3 = self.dk[7:12](ds_2)
+        ds_4 = self.dk[12:23](ds_3)
+        ds_5 = self.dk[23:34](ds_4)
+        ds_6 = self.dk[34:41](ds_5)
 
-        # upsample concatenated maps
-        map_4 = self.dropout(self.upsample_4(map_4, output_size=map_3.size()))
-        map_3 = self.dropout(self.upsample_3(torch.cat([map_3, map_4], 1), output_size=map_2.size()))
-        map_2 = self.dropout(self.upsample_2(torch.cat([map_2, map_3], 1), output_size=map_1.size()))
-        map_1 = self.dropout(self.upsample_1(torch.cat([map_1, map_2], 1), output_size=map_1.size()[:2] + siz[2:]))
-        return self.squash(map_1)
+        # upsample into vector of size (N*1984*H/2*W/2)
+        feat = torch.cat([ds_2,
+                          F.interpolate(ds_3, size=ds_2.shape[2:]),
+                          F.interpolate(ds_4, size=ds_2.shape[2:]),
+                          F.interpolate(ds_5, size=ds_2.shape[2:]),
+                          F.interpolate(ds_6, size=ds_2.shape[2:])], dim=1)
+        return feat
 
-    def init_weights(self):
-        self.upsample_4.apply(weight_init)
-        self.upsample_3.apply(weight_init)
-        self.upsample_2.apply(weight_init)
-        self.upsample_1.apply(weight_init)
-        self.squash.apply(weight_init)
 
+class VerticeNet(nn.Module):
+    """
+    Initial vertices calculation from features.
+    """
+    def __init__(self, refine_encoder=False):
+        super().__init__()
+        # initial vertices layer
+        self.vertices_conv = nn.Sequential(nn.Conv2d(1984, 128, 1, bias=False),
+                                           nn.BatchNorm2d(128),
+                                           nn.LeakyReLU(negative_slope=0.1),
+                                           nn.Conv2d(128, 256, 3, padding=2, dilation=2, bias=False),
+                                           nn.BatchNorm2d(256),
+                                           nn.LeakyReLU(negative_slope=0.1),
+                                           nn.Conv2d(256, 128, 3, padding=3, dilation=4, bias=False),
+                                           nn.BatchNorm2d(128),
+                                           nn.LeakyReLU(negative_slope=0.1),
+                                           nn.Conv2d(128, 1, 1, padding=1),
+                                           nn.Sigmoid())
+
+    def forward(self, inputs):
+        # endpoint vertices predicition network
+        o = self.vertices_conv(feat)
+        return o
+
+
+class PolyLineNet(nn.Module):
+    """
+    2D separable LSTM predicting next vertex in polyline based on last 3
+    vertices and a feature map.
+    """
+    def __init__(self, in_channels, out_channels, bidi=True):
+        super().__init__()
+        self.bidi = bidi
+        self.hidden_size = out_channels
+        self.output_size = out_channels if not self.bidi else 2*out_channels
+        self.hrnn = nn.LSTM(in_channels, self.hidden_size, batch_first=True, bidirectional=bidi)
+        self.vrnn = nn.LSTM(self.output_size, out_channels, batch_first=True, bidirectional=bidi)
+
+    def forward(self, inputs):
+        inputs = inputs.permute(2, 0, 3, 1)
+        siz = inputs.size()
+        # HNWC -> (H*N)WC
+        inputs = inputs.contiguous().view(-1, siz[2], siz[3])
+        # (H*N)WO
+        o, _ = self.hrnn(inputs)
+        # resize to HNWO
+        o = o.view(siz[0], siz[1], siz[2], self.output_size)
+        # vertical pass
+        # HNWO -> WNHO
+        o = o.transpose(0, 2)
+        # (W*N)HO
+        o = o.view(-1, siz[0], self.output_size)
+        # (W*N)HO'
+        o, _ = self.vrnn(o)
+        # (W*N)HO' -> WNHO'
+        o = o.view(siz[2], siz[1], siz[0], self.output_size)
+        # WNHO' -> NO'HW
+        return torch.sum(o.permute(1, 3, 2, 0), dim=1).unsqueeze(1)
