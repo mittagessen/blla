@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw
 from torchvision import transforms
 from torch.utils.data import DataLoader
 
-from blla.model import VerticeNet, PolyLineNet, FeatureNet
+from blla.model import VerticeNet, PolyLineNet, FeatureNet, FeatureExtractionNet
 from blla.darknet import Darknet53
 from blla.dataset import InitialVertexDataset, VerticesDataset
 from blla.postprocess import denoising_hysteresis_thresh
@@ -31,7 +31,7 @@ def compute_features(load, device, ground_truth):
     click.echo('loading darknet weights')
     dk.load_state_dict(torch.load(load, map_location=device))
     click.echo('instantiating feature network')
-    net = FeatureNet(dk)
+    net = FeatureExtractionNet(dk)
 
     click.echo('writing features')
     tfs = transforms.Compose([transforms.Resize(900), transforms.ToTensor(), transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
@@ -41,8 +41,8 @@ def compute_features(load, device, ground_truth):
                 click.echo(p)
                 with open(path.splitext(path.splitext(p)[0])[0] + '.feat', 'wb') as fp:
                     i = tfs(img).unsqueeze(0).to(device)
-                    o = net(i).squeeze()
-                    torch.save(o, fp)
+                    ds_2, ds_3, ds_4, ds_5, ds_6 = net(i)
+                    torch.save({'ds_2': ds_2, 'ds_3': ds_3, 'ds_4': ds_4, 'ds_5': ds_5, 'ds_6': ds_6}, fp)
 
 
 @cli.command()

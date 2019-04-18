@@ -9,6 +9,9 @@ from torchvision import transforms
 
 from scipy.ndimage import morphology
 
+
+
+
 class InitialVertexDataset(data.Dataset):
 
     def __init__(self, imgs):
@@ -22,16 +25,16 @@ class InitialVertexDataset(data.Dataset):
         feats = torch.load('{}.feat'.format(im))
         return self.transform(feats, target)
 
-    def transform(self, feats, targets):
+    def transform(self, feats, target):
         vertices = [min(t, key=lambda x: x[0]) for t in target['lines']]
-        scale_x = feats.shape[3] / target['orig'][0]
-        scale_y = feats.shape[2] / target['orig'][1]
-        tim = np.zeros(image.size)
+        scale_x = feats['ds_2'].shape[3] // (target['orig'][0])
+        scale_y = feats['ds_2'].shape[2] // (target['orig'][1])
+        tim = np.zeros(target['orig'][::-1])
         for v in vertices:
-            tim[int(v[0]*scale_x), int(v[1]*scale_y)] = 255
+            tim[int(v[1]*scale_y), int(v[0]*scale_x)] = 255
         tim = morphology.binary_dilation(tim, iterations=2)*255
-        target = Image.fromarray(tim.T.astype('uint8'))
-        return feats, tf.to_tensor(target)
+        target = Image.fromarray(tim.astype('uint8'))
+        return img, tf.to_tensor(target).squeeze()
 
     def __len__(self):
         return len(self.imgs)
@@ -44,7 +47,7 @@ class VerticesDataset(data.Dataset):
         self.len = 0
         for im in self.imgs:
             with open('{}.lines.json'.format(im)) as fp:
-                self.len += len(json.load(fp))
+                self.len += len(json.load(fp)['lines'])
 
     def __getitem__(self, idx):
         im = self.imgs[idx]
@@ -53,12 +56,13 @@ class VerticesDataset(data.Dataset):
         feats = torch.load('{}.feat'.format(im))
         # create time series of targets
         l = np.random.choice(target['lines'])
-        # TODO: scale targets
         if l[0][0] > l[-1][0]:
             l = list(reversed(l))
         points = [line(*start, *end) for start, end in zip(l, l[1::])]
-        x = np.hstack([x[0] for x in points])[::10]
-        y = np.hstack([x[1] for x in points])[::10]
+        scale_x = feats['ds_2'].shape[3] // (target['orig'][0])
+        scale_y = feats['ds_2'].shape[2] // (target['orig'][1])
+        x = np.hstack([x[0]//scale_x for x in points])[::10]
+        y = np.hstack([x[1]//scale_y for x in points])[::10]
         targets = []
         for target in np.array((x, y)).T:
             t = np.zeros(target['orig'])

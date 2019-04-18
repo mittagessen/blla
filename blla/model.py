@@ -7,7 +7,7 @@ from torchvision import models
 from blla import darknet
 
 
-class FeatureNet(nn.Module):
+class FeatureExtractionNet(nn.Module):
     """
     Feature extraction from 53-layer darknet.
     """
@@ -24,44 +24,89 @@ class FeatureNet(nn.Module):
         ds_5 = self.dk[23:34](ds_4)
         ds_6 = self.dk[34:41](ds_5)
 
-        # upsample into vector of size (N*1984*H/2*W/2)
-        feat = torch.cat([ds_2,
-                          F.interpolate(ds_3, size=ds_2.shape[2:]),
-                          F.interpolate(ds_4, size=ds_2.shape[2:]),
-                          F.interpolate(ds_5, size=ds_2.shape[2:]),
-                          F.interpolate(ds_6, size=ds_2.shape[2:])], dim=1)
-        return feat
+        return ds_2, ds_3, ds_4, ds_5, ds_6
 
+
+class UnetDecoder(nn.Module):
+    """
+    U-Net decoder block with a convolution before upsampling.
+    """
+    def __init__(self, in_channels, inter_channels, out_channels):
+        super().__init__()
+        self.layer = nn.Sequential(nn.Conv2d(in_channels, inter_channels, 1, bias=False),
+                                   nn.BatchNorm2d(inter_channels),
+                                   nn.LeakyReLU(negative_slope=0.1),
+                                   nn.Conv2d(inter_channels, in_channels, 3, padding=1, bias=False),
+                                   nn.BatchNorm2d(in_channels),
+                                   nn.LeakyReLU(negative_slope=0.1),
+                                   nn.Conv2d(in_channels, inter_channels, 1, bias=False),
+                                   nn.BatchNorm2d(inter_channels),
+                                   nn.LeakyReLU(negative_slope=0.1))
+
+        self.deconv = nn.ConvTranspose2d(inter_channels, out_channels, 3, padding=1, stride=2)
+        self.norm_act = nn.Sequential(nn.BatchNorm2d(out_channels), nn.LeakyReLU(negative_slope=0.1))
+
+    def forward(self, x, output_size):
+        x = self.layer(x)
+        return self.norm_act(self.deconv(x, output_size=output_size))
 
 class VerticeNet(nn.Module):
     """
     Initial vertices calculation from features.
     """
-    def __init__(self, refine_encoder=False):
+    def __init__(self):
         super().__init__()
         # initial vertices layer
-        self.vertices_conv = nn.Sequential(nn.Conv2d(1984, 128, 1, bias=False),
-                                           nn.BatchNorm2d(128),
-                                           nn.LeakyReLU(negative_slope=0.1),
-                                           nn.Conv2d(128, 256, 3, padding=2, dilation=2, bias=False),
-                                           nn.BatchNorm2d(256),
-                                           nn.LeakyReLU(negative_slope=0.1),
-                                           nn.Conv2d(256, 128, 3, padding=3, dilation=4, bias=False),
-                                           nn.BatchNorm2d(128),
-                                           nn.LeakyReLU(negative_slope=0.1),
-                                           nn.Conv2d(128, 1, 1, padding=1),
-                                           nn.Sigmoid())
+        self.upsample_6 = UnetDecoder(1024, 512, 256)
+        self.upsample_5 = UnetDecoder(768, 384, 192)
+        self.upsample_4 = UnetDecoder(448, 224, 112)
+        self.upsample_3 = UnetDecoder(240, 120, 60)
+        self.squash = nn.Sequential(nn.Conv2d(124, 64, 1, bias=False),
+                                    nn.BatchNorm2d(64),
+                                    nn.LeakyReLU(negative_slope=0.1),
+                                    nn.Conv2d(64, 128, 3, padding=1, bias=False),
+                                    nn.BatchNorm2d(128),
+                                    nn.LeakyReLU(negative_slope=0.1),
+                                    nn.Conv2d(128, 1, 1, bias=False),
+                                    nn.BatchNorm2d(1),
+                                    nn.Sigmoid())
 
-    def forward(self, inputs):
-        # endpoint vertices predicition network
-        o = self.vertices_conv(feat)
-        return o
+    def forward(self, ds_2, ds_3, ds_4, ds_5, ds_6):
+        map_5 = self.upsample_6(ds_6, output_size=ds_5.size())
+        map_4 = self.upsample_5(torch.cat([map_5, ds_5], 1), output_size=ds_4.size())
+        map_3 = self.upsample_4(torch.cat([map_4, ds_4], 1), output_size=ds_3.size())
+        map_2 = self.upsample_3(torch.cat([map_3, ds_3], 1), output_size=ds_2.size())
+        return self.squash(torch.cat([map_2, ds_2], 1))
 
+class FeatureNet(nn.Module):
+    """
+    Upsamples and reduces dimensionality of feature maps from darknet
+    """
+    def __init__(self):
+        super().__init__()
+        self.upsample_6 = UnetDecoder(1024, 512, 128)
+        self.upsample_5 = UnetDecoder(640, 320, 128)
+        self.upsample_4 = UnetDecoder(384, 192, 128)
+        self.upsample_3 = UnetDecoder(256, 128, 128)
+        self.squash = nn.Sequential(nn.Conv2d(192, 64, 1, bias=False),
+                                    nn.BatchNorm2d(64),
+                                    nn.LeakyReLU(negative_slope=0.1),
+                                    nn.Conv2d(64, 128, 3, padding=1, bias=False),
+                                    nn.BatchNorm2d(128),
+                                    nn.LeakyReLU(negative_slope=0.1))
+
+    def forward(self, ds_2, ds_3, ds_4, ds_5, ds_6):
+        map_5 = self.upsample_6(ds_6, output_size=ds_5.size())
+        map_4 = self.upsample_5(torch.cat([map_5, ds_5], 1), output_size=ds_4.size())
+        map_3 = self.upsample_4(torch.cat([map_4, ds_4], 1), output_size=ds_3.size())
+        map_2 = self.upsample_3(torch.cat([map_3, ds_3], 1), output_size=ds_2.size())
+        return self.squash(torch.cat([map_2, ds_2], 1))
 
 class PolyLineNet(nn.Module):
     """
     2D separable LSTM predicting next vertex in polyline based on last 3
     vertices and a feature map.
+
     """
     def __init__(self, in_channels, out_channels, bidi=True):
         super().__init__()
@@ -72,6 +117,7 @@ class PolyLineNet(nn.Module):
         self.vrnn = nn.LSTM(self.output_size, out_channels, batch_first=True, bidirectional=bidi)
 
     def forward(self, inputs):
+        # NCHW -> HNWC
         inputs = inputs.permute(2, 0, 3, 1)
         siz = inputs.size()
         # HNWC -> (H*N)WC
@@ -91,3 +137,5 @@ class PolyLineNet(nn.Module):
         o = o.view(siz[2], siz[1], siz[0], self.output_size)
         # WNHO' -> NO'HW
         return torch.sum(o.permute(1, 3, 2, 0), dim=1).unsqueeze(1)
+
+
