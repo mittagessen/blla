@@ -34,7 +34,12 @@ class InitialVertexDataset(data.Dataset):
             tim[int(v[1]*scale_y), int(v[0]*scale_x)] = 255
         tim = morphology.binary_dilation(tim, iterations=2)*255
         target = Image.fromarray(tim.astype('uint8'))
-        return img, tf.to_tensor(target).squeeze()
+        return (feats['ds_2'],
+                feats['ds_3'],
+                feats['ds_4'],
+                feats['ds_5'],
+                feats['ds_6'],
+                tf.to_tensor(target).squeeze())
 
     def __len__(self):
         return len(self.imgs)
@@ -68,7 +73,12 @@ class VerticesDataset(data.Dataset):
             t = np.zeros(target['orig'])
             t[target.T] = 1
             targets.append(t)
-        return feats, torch.tensor(np.stack(targets))
+        return (feats['ds_2'],
+                feats['ds_3'],
+                feats['ds_4'],
+                feats['ds_5'],
+                feats['ds_6'],
+                torch.tensor(np.stack(targets)))
 
     def __len__(self):
         return len(self.imgs)
