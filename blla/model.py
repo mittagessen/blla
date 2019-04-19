@@ -68,8 +68,7 @@ class VerticeNet(nn.Module):
                                     nn.BatchNorm2d(128),
                                     nn.LeakyReLU(negative_slope=0.1),
                                     nn.Conv2d(128, 1, 1, bias=False),
-                                    nn.BatchNorm2d(1),
-                                    nn.Sigmoid())
+                                    nn.BatchNorm2d(1))
 
     def forward(self, ds_2, ds_3, ds_4, ds_5, ds_6):
         map_5 = self.upsample_6(ds_6, output_size=ds_5.size())

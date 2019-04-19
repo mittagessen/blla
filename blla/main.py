@@ -62,13 +62,13 @@ def ivtrain(name, load, lrate, weight_decay, workers, device, validation, ground
 
     torch.set_num_threads(1)
 
-    train_set = InitialVertexDataset(glob.glob('{}/**/*.lines.json'.format(ground_truth), recursive=True))
+    train_set = InitialVertexDataset(glob.glob('{}/**/*.plain.png'.format(ground_truth), recursive=True))
     train_data_loader = DataLoader(dataset=train_set, num_workers=workers, batch_size=1, shuffle=True, pin_memory=True)
-    val_set = InitialVertexDataset(glob.glob('{}/**/*.lines.json'.format(validation), recursive=True))
+    val_set = InitialVertexDataset(glob.glob('{}/**/*.plain.png'.format(validation), recursive=True))
     val_data_loader = DataLoader(dataset=val_set, num_workers=workers, batch_size=1, pin_memory=True)
 
     click.echo('loading network')
-    model = ResUNet(refine_encoder=False).to(device)
+    model = VerticeNet().to(device)
 
     if load:
         click.echo('loading weights')
