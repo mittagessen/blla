@@ -60,19 +60,19 @@ class VerticesDataset(data.Dataset):
             target = json.load(fp)
         feats = torch.load('{}.feat'.format(im))
         # create time series of targets
-        l = np.random.choice(target['lines'])
+        l = target['lines'][np.random.choice(len(target['lines']))]
         if l[0][0] > l[-1][0]:
             l = list(reversed(l))
         points = [line(*start, *end) for start, end in zip(l, l[1::])]
         scale_x = feats['ds_2'].shape[2] / (target['orig'][1])
         scale_y = feats['ds_2'].shape[1] / (target['orig'][0])
-        x = np.hstack([x[0]//scale_x for x in points])[::10]
-        y = np.hstack([x[1]//scale_y for x in points])[::10]
+        x = np.hstack([int(x[0]*scale_x) for x in points])[::10]
+        y = np.hstack([int(x[1]*scale_y) for x in points])[::10]
         targets = []
         for target in np.array((x, y)).T:
             t = np.zeros(target['orig'])
-            t[target.T] = 1
-            targets.append(t)
+            t[target.T] = 255
+            targets.append(morphology.binary_dilation(t, iterations=2)*255)
         return (feats['ds_2'],
                 feats['ds_3'],
                 feats['ds_4'],
