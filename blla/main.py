@@ -114,22 +114,22 @@ def evaluate(model, device, criterion, data_loader):
     precision = 0.0
     loss = 0.0
     with torch.no_grad():
-        for sample in data_loader:
-            ds_2, ds_3, ds_4, ds_5, ds_6, target = sample
-            ds_2 = ds_2.to(device, non_blocking=True)
-            ds_3 = ds_3.to(device, non_blocking=True)
-            ds_4 = ds_4.to(device, non_blocking=True)
-            ds_5 = ds_5.to(device, non_blocking=True)
-            ds_6 = ds_6.to(device, non_blocking=True)
-            target = target.to(device, non_blocking=True)
+        with click.progressbar(data_loader, label='validation', show_pos=True) as bar:
+            for sample in bar:
+                ds_2, ds_3, ds_4, ds_5, ds_6, target = sample
+                ds_2 = ds_2.to(device, non_blocking=True)
+                ds_3 = ds_3.to(device, non_blocking=True)
+                ds_4 = ds_4.to(device, non_blocking=True)
+                ds_5 = ds_5.to(device, non_blocking=True)
+                ds_6 = ds_6.to(device, non_blocking=True)
+                target = target.to(device, non_blocking=True)
 
-            o = model(ds_2, ds_3, ds_4, ds_5, ds_6).squeeze(0)
-            loss += criterion(o, target)
-            o = torch.sigmoid(o)
-            pred = hysteresis_thresh(o.detach().squeeze().cpu().numpy(), 0.5, 0.5)
-            tp = float((pred == target.detach().squeeze().cpu().numpy()).sum())
-            recall += tp / target.sum()
-            precision += tp / pred.sum()
-            accuracy += tp / len(target.view(-1))
+                o = model(ds_2, ds_3, ds_4, ds_5, ds_6).squeeze(0)
+                loss += criterion(o, target)
+                o = torch.sigmoid(o)
+                pred = hysteresis_thresh(o.detach().squeeze().cpu().numpy(), 0.5, 0.5)
+                tp = float((pred == target.detach().squeeze().cpu().numpy()).sum())
+                recall += tp / target.sum()
+                precision += tp / pred.sum()
+                accuracy += tp / len(target.view(-1))
     return accuracy / len(data_loader), recall / len(data_loader), precision / len(data_loader), loss / len(data_loader)
-
