@@ -115,7 +115,7 @@ def evaluate(model, device, criterion, data_loader):
     loss = 0.0
     with torch.no_grad():
         for sample in data_loader:
-            ds_2, ds_3, ds_4, ds_5, ds_6, target = batch
+            ds_2, ds_3, ds_4, ds_5, ds_6, target = sample
             ds_2 = ds_2.to(device, non_blocking=True)
             ds_3 = ds_3.to(device, non_blocking=True)
             ds_4 = ds_4.to(device, non_blocking=True)
