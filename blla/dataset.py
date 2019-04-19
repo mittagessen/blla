@@ -8,9 +8,7 @@ from torch.utils import data
 from torchvision import transforms
 
 from scipy.ndimage import morphology
-
-
-
+from skimage.draw import line
 
 class InitialVertexDataset(data.Dataset):
 
