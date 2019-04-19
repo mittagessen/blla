@@ -29,7 +29,7 @@ class InitialVertexDataset(data.Dataset):
         vertices = [min(t, key=lambda x: x[0]) for t in target['lines']]
         scale_x = feats['ds_2'].shape[2] // (target['orig'][0])
         scale_y = feats['ds_2'].shape[1] // (target['orig'][1])
-        tim = np.zeros(target['orig'][::-1])
+        tim = np.zeros(feats['ds_2'].shape[1::])
         for v in vertices:
             tim[int(v[1]*scale_y), int(v[0]*scale_x)] = 255
         tim = morphology.binary_dilation(tim, iterations=2)*255
