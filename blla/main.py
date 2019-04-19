@@ -42,6 +42,11 @@ def compute_features(load, device, ground_truth):
                 with open(path.splitext(path.splitext(p)[0])[0] + '.feat', 'wb') as fp:
                     i = tfs(img).unsqueeze(0).to(device)
                     ds_2, ds_3, ds_4, ds_5, ds_6 = net(i)
+                    ds_2 = ds_2.to('cpu')
+                    ds_3 = ds_3.to('cpu')
+                    ds_4 = ds_4.to('cpu')
+                    ds_5 = ds_5.to('cpu')
+                    ds_6 = ds_6.to('cpu')
                     torch.save({'ds_2': ds_2.squeeze(), 'ds_3': ds_3.squeeze(), 'ds_4': ds_4.squeeze(), 'ds_5': ds_5.squeeze(), 'ds_6': ds_6.squeeze()}, fp)
 
 
