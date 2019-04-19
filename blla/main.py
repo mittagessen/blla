@@ -90,7 +90,7 @@ def ivtrain(name, load, lrate, weight_decay, workers, device, validation, ground
 
 
     for epoch in range(999):
-        epochh_loss = 0
+        epoch_loss = 0
         with click.progressbar(train_data_loader, label='epoch {}'.format(epoch), show_pos=True) as bar:
             for batch in bar:
                 ds_2, ds_3, ds_4, ds_5, ds_6, target = batch
