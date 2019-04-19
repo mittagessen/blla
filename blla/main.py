@@ -77,38 +77,54 @@ def ivtrain(name, load, lrate, weight_decay, workers, device, validation, ground
     criterion = nn.BCEWithLogitsLoss()
     opti = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lrate, weight_decay=weight_decay)
 
-    def score_function(engine):
-        val_loss = engine.state.metrics['loss']
-        return -val_loss
-
-    def output_preprocess(output):
-        o, target = output
+    def output_preprocess(o, target):
         o = torch.sigmoid(o)
         o = denoising_hysteresis_thresh(o.detach().squeeze().cpu().numpy(), 0.8, 0.9, 2.5)
         return torch.from_numpy(o.astype('f')).unsqueeze(0).unsqueeze(0).to(device), target.double().to(device)
 
-    trainer = create_supervised_trainer(model, opti, criterion, device=device, non_blocking=True)
-    evaluator = create_supervised_evaluator(model, device=device, non_blocking=True, metrics={'accuracy': Accuracy(output_transform=output_preprocess),
-                                                                                              'precision': Precision(output_transform=output_preprocess),
-                                                                                              'recall': Recall(output_transform=output_preprocess),
-                                                                                              'loss': Loss(criterion)})
-    ckpt_handler = ModelCheckpoint('.', name, save_interval=1, n_saved=10, require_empty=False)
-    RunningAverage(output_transform=lambda x: x).attach(trainer, 'loss')
 
-    progress_bar = ProgressBar(persist=True)
-    progress_bar.attach(trainer, ['loss'])
 
-    trainer.add_event_handler(event_name=Events.EPOCH_COMPLETED, handler=ckpt_handler, to_save={'net': model})
-    trainer.add_event_handler(event_name=Events.ITERATION_COMPLETED, handler=TerminateOnNan())
+    for epoch in range(999):
+        epochh_loss = 0
+        with click.progressbar(train_data_loader, label='epoch {}'.format(epoch), show_pos=True) as bar:
+            for batch in bar:
+                ds_2, ds_3, ds_4, ds_5, ds_6, target = batch
+                ds_2 = ds_2.to(device, non_blocking=True)
+                ds_3 = ds_3.to(device, non_blocking=True)
+                ds_4 = ds_4.to(device, non_blocking=True)
+                ds_5 = ds_5.to(device, non_blocking=True)
+                ds_6 = ds_6.to(device, non_blocking=True)
+                target = target.to(device, non_blocking=True)
 
-    @trainer.on(Events.EPOCH_COMPLETED)
-    def log_validation_results(engine):
-        evaluator.run(val_data_loader)
-        metrics = evaluator.state.metrics
-        progress_bar.log_message('eval results - epoch {} loss: {:.4f} accuracy: {:.4f} recall: {:.4f} precision {:.4f}'.format(engine.state.epoch,
-                                                                                                                   metrics['loss'],
-                                                                                                                   metrics['accuracy'],
-                                                                                                                   metrics['recall'],
-                                                                                                                   metrics['precision']))
-    trainer.run(train_data_loader, max_epochs=1000)
+                opti.zero_grad()
+                o = model(ds_2, d_3, ds_4, ds_5, ds_6)
+                loss = criterion(o, target)
+                epoch_loss += loss
+                loss.backward()
+                opti.step()
+        torch.save(model.state_dict(), '{}_{}.pth'.format(name, epoch))
+        print("===> epoch {} complete: avg. loss: {:.4f}".format(epoch, epoch_loss / len(train_data_loader)))
+        val_acc, val_recall, val_precision, val_loss = evaluate(model, device, criterion, val_data_loader)
+        model.train()
+        print("===> epoch {} validation loss: {:.4f} (accuracy: {:.4f}, recall: {:.4f}, precision: {:.4f})".format(epoch, val_loss, val_acc, val_recall, val_precision))
+
+
+def evaluate(model, device, criterion, data_loader):
+    model.evalute()
+    accuracy = 0.0
+    recall = 0.0
+    precision = 0.0
+    loss = 0.0
+    with torch.no_grad():
+         for sample in data_loader:
+             input, target = sample[0].to(device), sample[1].to(device)
+             o = model(input)
+             loss += criterion(o, target)
+             o = model.nonlin(o)
+             pred = denoising_hysteresis_thresh(o.detach().squeeze().cpu().numpy(), 0.3, 0.5, 2.5)
+             tp = float((pred == target.detach().squeeze().cpu().numpy()).sum())
+             recall += tp / target.sum()
+             precision += tp / pred.sum()
+             accuracy += tp / len(target.view(-1))
+    return accuracy / len(data_loader), recall / len(data_loader), precision / len(data_loader), loss / len(data_loader)
 
