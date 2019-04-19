@@ -27,8 +27,8 @@ class InitialVertexDataset(data.Dataset):
 
     def transform(self, feats, target):
         vertices = [min(t, key=lambda x: x[0]) for t in target['lines']]
-        scale_x = feats['ds_2'].shape[2] // (target['orig'][0])
-        scale_y = feats['ds_2'].shape[1] // (target['orig'][1])
+        scale_x = feats['ds_2'].shape[2] / (target['orig'][1])
+        scale_y = feats['ds_2'].shape[1] / (target['orig'][0])
         tim = np.zeros(feats['ds_2'].shape[1::])
         for v in vertices:
             tim[int(v[1]*scale_y), int(v[0]*scale_x)] = 255
@@ -64,8 +64,8 @@ class VerticesDataset(data.Dataset):
         if l[0][0] > l[-1][0]:
             l = list(reversed(l))
         points = [line(*start, *end) for start, end in zip(l, l[1::])]
-        scale_x = feats['ds_2'].shape[2] // (target['orig'][0])
-        scale_y = feats['ds_2'].shape[1] // (target['orig'][1])
+        scale_x = feats['ds_2'].shape[2] / (target['orig'][1])
+        scale_y = feats['ds_2'].shape[1] / (target['orig'][0])
         x = np.hstack([x[0]//scale_x for x in points])[::10]
         y = np.hstack([x[1]//scale_y for x in points])[::10]
         targets = []

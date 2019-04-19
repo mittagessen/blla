@@ -102,7 +102,7 @@ def ivtrain(name, load, lrate, weight_decay, workers, device, validation, ground
                 target = target.to(device, non_blocking=True)
 
                 opti.zero_grad()
-                o = model(ds_2, ds_3, ds_4, ds_5, ds_6)
+                o = model(ds_2, ds_3, ds_4, ds_5, ds_6).squeeze(0)
                 loss = criterion(o, target)
                 epoch_loss += loss
                 loss.backward()
@@ -115,7 +115,7 @@ def ivtrain(name, load, lrate, weight_decay, workers, device, validation, ground
 
 
 def evaluate(model, device, criterion, data_loader):
-    model.evalute()
+    model.evaluate()
     accuracy = 0.0
     recall = 0.0
     precision = 0.0
