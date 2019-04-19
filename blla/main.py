@@ -115,7 +115,7 @@ def ivtrain(name, load, lrate, weight_decay, workers, device, validation, ground
 
 
 def evaluate(model, device, criterion, data_loader):
-    model.evaluate()
+    model.eval()
     accuracy = 0.0
     recall = 0.0
     precision = 0.0
