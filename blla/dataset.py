@@ -57,26 +57,43 @@ class VerticesDataset(data.Dataset):
         with open('{}.lines.json'.format(im)) as fp:
             target = json.load(fp)
         feats = torch.load('{}.feat'.format(im))
+        fshape = feats['ds_2'].shape[1:]
+        # feature shapes + 1 for EOS symbol
+        tshape = (fshape[0], fshape[1] + 1)
+        # scale factors between original image and downsampled feature map
+        scale_y = fshape[0] / (target['orig'][0])
+        scale_x = fshape[1] / (target['orig'][1])
         # create time series of targets
         l = target['lines'][np.random.choice(len(target['lines']))]
         if l[0][0] > l[-1][0]:
             l = list(reversed(l))
         points = [line(*start, *end) for start, end in zip(l, l[1::])]
-        scale_x = feats['ds_2'].shape[2] / (target['orig'][1])
-        scale_y = feats['ds_2'].shape[1] / (target['orig'][0])
-        x = np.hstack([int(x[0]*scale_x) for x in points])[::10]
-        y = np.hstack([int(x[1]*scale_y) for x in points])[::10]
+        y = np.hstack([x[1]*scale_y for x in points])[::10].astype('int')
+        x = np.hstack([x[0]*scale_x for x in points])[::10].astype('int')
+        # create one target map for each time step
         targets = []
-        for target in np.array((x, y)).T:
-            t = np.zeros(target['orig'])
-            t[target.T] = 255
-            targets.append(morphology.binary_dilation(t, iterations=2)*255)
+        for ty, tx in zip(y, x):
+            t = np.zeros(tshape)
+            t[ty, tx] = 255
+            targets.append(t)
+            #targets.append(morphology.binary_dilation(t, iterations=2)*255)
+        # add initial node twice
+        targets.insert(1, targets[0])
+        # zip into inputs of shape (seq, stack, H, W)
+        inputs = torch.tensor([np.array(x) for x in zip(targets, targets[1::])])
+        # add EOS symbol
+        t = np.zeros(tshape)
+        t[0, -1] = 255
+        targets.append(t)
+        # build targets (seq, H, W)
+        targets = torch.tensor(targets[2::])
         return (feats['ds_2'],
                 feats['ds_3'],
                 feats['ds_4'],
                 feats['ds_5'],
                 feats['ds_6'],
-                torch.tensor(np.stack(targets)))
+                inputs.float(),
+                targets.float())
 
     def __len__(self):
         return len(self.imgs)

@@ -136,5 +136,3 @@ class PolyLineNet(nn.Module):
         o = o.view(siz[2], siz[1], siz[0], self.output_size)
         # WNHO' -> NO'HW
         return torch.sum(o.permute(1, 3, 2, 0), dim=1).unsqueeze(1)
-
-
