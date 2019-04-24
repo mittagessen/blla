@@ -115,24 +115,22 @@ class PolyLineNet(nn.Module):
         self.hrnn = nn.LSTM(in_channels, self.hidden_size, batch_first=True, bidirectional=bidi)
         self.vrnn = nn.LSTM(self.output_size, out_channels, batch_first=True, bidirectional=bidi)
 
-    def forward(self, inputs):
-        # NCHW -> HNWC
-        inputs = inputs.permute(2, 0, 3, 1)
+    def forward(self, feature_map, activation_map):
+        """
+        feature_map shape (1,128,H,W)
+        activation_maps shape (2, H, W)
+        output (N, 1, H, W)
+        """
+        inputs = torch.cat((feature_map.squeeze(), activation_map))
+        # CHW -> HWC
+        inputs = inputs.permute(1, 2, 0)
         siz = inputs.size()
-        # HNWC -> (H*N)WC
-        inputs = inputs.contiguous().view(-1, siz[2], siz[3])
-        # (H*N)WO
+        # HWO
         o, _ = self.hrnn(inputs)
-        # resize to HNWO
-        o = o.view(siz[0], siz[1], siz[2], self.output_size)
         # vertical pass
-        # HNWO -> WNHO
-        o = o.transpose(0, 2)
-        # (W*N)HO
-        o = o.view(-1, siz[0], self.output_size)
-        # (W*N)HO'
+        # HWO -> WHO
+        o = o.transpose(0, 1)
+        # WHO'
         o, _ = self.vrnn(o)
-        # (W*N)HO' -> WNHO'
-        o = o.view(siz[2], siz[1], siz[0], self.output_size)
-        # WNHO' -> NO'HW
-        return torch.sum(o.permute(1, 3, 2, 0), dim=1).unsqueeze(1)
+        # WHO' -> O'HW
+        return torch.sum(o.transpose(0, 2), dim=0)

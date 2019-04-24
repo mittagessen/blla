@@ -8,7 +8,7 @@ import torch
 import torch.nn.functional as F
 
 from os import path
-from torch import nn, optim
+from torch import nn, optim, autograd
 from PIL import Image, ImageDraw
 from torchvision import transforms
 from torch.utils.data import DataLoader
@@ -164,13 +164,13 @@ def svtrain(name, load, lrate, weight_decay, workers, device, validation, ground
     ])
 
     criterion = nn.BCEWithLogitsLoss()
-    opti = optim.Adam(model.parameters(), lr=lrate, weight_decay=weight_decay)
+    optimizer_feat = optim.Adam(model['fmodel'].parameters(), lr=lrate, weight_decay=weight_decay)
+    optimizer_poly = optim.Adam(model['pmodel'].parameters(), lr=lrate, weight_decay=weight_decay)
 
     click.echo('starting training')
     for epoch in range(999):
         epoch_loss = 0
         with click.progressbar(train_data_loader, label='epoch {}'.format(epoch), show_pos=True) as bar:
-            print('getting batch')
             for batch in bar:
                 ds_2, ds_3, ds_4, ds_5, ds_6, inputs, target = batch
                 ds_2 = ds_2.to(device, non_blocking=True)
@@ -178,32 +178,35 @@ def svtrain(name, load, lrate, weight_decay, workers, device, validation, ground
                 ds_4 = ds_4.to(device, non_blocking=True)
                 ds_5 = ds_5.to(device, non_blocking=True)
                 ds_6 = ds_6.to(device, non_blocking=True)
-                inputs = inputs.to(device, non_blocking=True).squeeze(0)
+                inputs = inputs.to(device, non_blocking=True)
                 target = target.to(device, non_blocking=True)
 
-                opti.zero_grad()
-
-                print('computing feature map')
+                optimizer_feat.zero_grad()
                 # first compute an upsampled feature map
                 feature_map = model['fmodel'](ds_2, ds_3, ds_4, ds_5, ds_6)
                 # pad feature map in width dimension to make space for EOS symbol
                 feature_map = F.pad(feature_map, (0, 1))
+                feature_map_d = feature_map.detach().squeeze()
+                feature_map_d.requires_grad = True
                 # forward pass over each time slice
-
-                efmap = feature_map.expand(inputs.shape[0:1] + feature_map.shape[1:])
-                print(efmap.shape)
-                print(inputs.squeeze().shape)
-                inputs = torch.cat((efmap, inputs), dim=1)
-                print('computing rnn')
-                o = model['pmodel'](i)
-                print('loss')
-                loss = criterion(o, target)
-                epoch_loss += loss
-                loss.backward(retain_graph=True)
-                opti.step()
+                for x, y in zip(inputs.squeeze(), target.squeeze()):
+                    optimizer_poly.zero_grad()
+                    o = model['pmodel'](feature_map_d, x)
+                    loss = criterion(o, y)
+                    epoch_loss += loss
+                    loss.backward()
+                    autograd.backward(feature_map_d, grad_tensors=[feature_map_d.grad])
+                    optimizer_poly.step()
+                optimizer_feat.step()
         torch.save(model.state_dict(), '{}_{}.pth'.format(name, epoch))
-        print("===> epoch {} complete: avg. loss: {:.4f}".format(epoch, epoch_loss / len(train_data_loader)))
+        click.echo("===> epoch {} complete: avg. loss: {:.4f}".format(epoch, epoch_loss / len(train_data_loader)))
         val_acc, val_recall, val_precision, val_loss = evaluate(model, device, criterion, val_data_loader)
         model.train()
-        print("===> epoch {} validation loss: {:.4f} (accuracy: {:.4f}, recall: {:.4f}, precision: {:.4f})".format(epoch, val_loss, val_acc, val_recall, val_precision))
+        click.echo("===> epoch {} validation loss: {:.4f} (accuracy: {:.4f}, recall: {:.4f}, precision: {:.4f})".format(epoch, val_loss, val_acc, val_recall, val_precision))
 
+#@cli.command()
+#@click.option('-m', '--model', default=None, help='model file')
+#@click.option('-d', '--device', default='cpu', help='pytorch device')
+#@click.option('-c', '--context', default=80, help='context around baseline')
+#@click.argument('images', nargs=-1)
+#def pred(model, device, context, images):
