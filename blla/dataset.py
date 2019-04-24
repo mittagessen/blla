@@ -96,4 +96,4 @@ class VerticesDataset(data.Dataset):
                 targets.float())
 
     def __len__(self):
-        return len(self.imgs)
+        return self.len
