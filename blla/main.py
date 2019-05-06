@@ -16,7 +16,7 @@ from ignite.handlers import ModelCheckpoint, TerminateOnNan
 from ignite.metrics import Accuracy, Precision, Recall, RunningAverage, Loss
 from ignite.engine import Engine, Events, create_supervised_trainer, create_supervised_evaluator
 
-from blla.model import ResUNet
+from blla.model import ResUNet, RecLabelNet
 from blla.dataset import BaselineSet
 from blla.postprocess import denoising_hysteresis_thresh
 
@@ -47,7 +47,7 @@ def train(name, load, lrate, weight_decay, workers, device, validation, ground_t
     val_data_loader = DataLoader(dataset=val_set, num_workers=workers, batch_size=1, pin_memory=True)
 
     click.echo('loading network')
-    model = ResUNet(refine_encoder=False).to(device)
+    model = RecLabelNet().to(device)
 
     if load:
         click.echo('loading weights')

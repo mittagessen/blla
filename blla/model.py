@@ -4,6 +4,71 @@ import torch.nn.functional as F
 from torch import nn
 from torchvision import models
 
+class ReNet(nn.Module):
+    """
+    Recurrent block from ReNet.
+
+    Performs a horizontal pass over input features, followed by a vertical pass
+    over the output of the first pass.
+    """
+    def __init__(self, in_channels, out_channels, bidi=True):
+        super().__init__()
+        self.bidi = bidi
+        self.hidden_size = out_channels
+        self.output_size = out_channels if not self.bidi else 2*out_channels
+        self.hrnn = nn.LSTM(in_channels, self.hidden_size, batch_first=True, bidirectional=bidi)
+        self.vrnn = nn.LSTM(self.output_size, out_channels, batch_first=True, bidirectional=bidi)
+
+    def forward(self, inputs):
+        # horizontal pass
+        # NCHW -> HNWC
+        inputs = inputs.permute(2, 0, 3, 1)
+        siz = inputs.size()
+        # HNWC -> (H*N)WC
+        inputs = inputs.contiguous().view(-1, siz[2], siz[3])
+        # (H*N)WO
+        o, _ = self.hrnn(inputs)
+        # resize to HNWO
+        o = o.view(siz[0], siz[1], siz[2], self.output_size)
+        # vertical pass
+        # HNWO -> WNHO
+        o = o.transpose(0, 2)
+        # (W*N)HO
+        o = o.view(-1, siz[0], self.output_size)
+        # (W*N)HO'
+        o, _ = self.vrnn(o)
+        # (W*N)HO' -> WNHO'
+        o = o.view(siz[2], siz[1], siz[0], self.output_size)
+        # WNHO' -> NO'HW
+        return o.permute(1, 3, 2, 0)
+
+
+class RecLabelNet(nn.Module):
+    """
+    separable recurrent net for baseline labeling.
+    """
+    def __init__(self):
+        super().__init__()
+        self.label = nn.Sequential(nn.Conv2d(3, 64, 3, padding=1, bias=False),
+                                   nn.GroupNorm(32, 64),
+                                   nn.LeakyReLU(negative_slope=0.1),
+                                   nn.Conv2d(64, 128, 3, padding=1, stride=2, bias=False),
+                                   nn.GroupNorm(32, 128),
+                                   nn.LeakyReLU(negative_slope=0.1),
+                                   nn.Conv2d(128, 64, 3, padding=1, stride=2, bias=False),
+                                   nn.GroupNorm(32, 64),
+                                   nn.LeakyReLU(negative_slope=0.1),
+                                   ReNet(64, 32),
+                                   nn.Conv2d(64, 32, 1, bias=False),
+                                   nn.GroupNorm(32, 32),
+                                   nn.LeakyReLU(negative_slope=0.1),
+                                   ReNet(32, 32),
+                                   nn.Conv2d(64, 1, 1, bias=False))
+
+    def forward(self, x):
+        siz = x.size()
+        o = self.label(x)
+        return F.interpolate(o, size=(siz[2], siz[3]))
 
 def weight_init(m):
     if isinstance(m, nn.Linear):
