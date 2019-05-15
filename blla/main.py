@@ -64,7 +64,7 @@ def train(name, load, lrate, weight_decay, workers, smooth, device, validation, 
     def output_preprocess(output):
         o, target = output
         o = torch.sigmoid(o)
-        o = denoising_hysteresis_thresh(o.detach().squeeze().cpu().numpy(), 0.8, 0.9, 2.5)
+        o = denoising_hysteresis_thresh(o.detach().squeeze().cpu().numpy(), 0.4, 0.5, 0)
         return torch.from_numpy(o.astype('f')).unsqueeze(0).unsqueeze(0).to(device), target.double().to(device)
 
     trainer = create_supervised_trainer(model, opti, criterion, device=device, non_blocking=True)
