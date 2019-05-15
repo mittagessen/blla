@@ -72,17 +72,12 @@ def train(name, load, lrate, weight_decay, workers, smooth, device, validation, 
     precision = Precision(output_transform=output_preprocess)
     recall = Recall(output_transform=output_preprocess)
     loss = Loss(criterion)
-    precision = Precision(average=False)
-    recall = Recall(average=False)
-    f1 = (precision * recall * 2 / (precision + recall)).mean()
-
     evaluator = create_supervised_evaluator(model, device=device, non_blocking=True)
 
     accuracy.attach(evaluator, 'accuracy')
     precision.attach(evaluator, 'precision')
     recall.attach(evaluator, 'recall')
     loss.attach(evaluator, 'loss')
-    f1.attach(evaluator, 'f1')
 
     ckpt_handler = ModelCheckpoint('.', name, save_interval=1, n_saved=10, require_empty=False)
     RunningAverage(output_transform=lambda x: x).attach(trainer, 'loss')
@@ -97,11 +92,15 @@ def train(name, load, lrate, weight_decay, workers, smooth, device, validation, 
     def log_validation_results(engine):
         evaluator.run(val_data_loader)
         metrics = evaluator.state.metrics
+        r = metrics['recall']
+        p = metrics['precision']
+        f1 = (p  * r * 2)/(p + r + 1e-20)
         progress_bar.log_message('eval results - epoch {} loss: {:.4f} f1: {:.4f}, accuracy: {:.4f} recall: {:.4f} precision {:.4f}'.format(engine.state.epoch,
                                                                                                                    metrics['loss'],
-                                                                                                                   metrics['f1'],
+                                                                                                                   f1,
                                                                                                                    metrics['accuracy'],
-                                                                                                                   metrics['recall'],
+                                                                                                                   p,
+                                                                                                                   r,
                                                                                                                    metrics['precision']))
     trainer.run(train_data_loader, max_epochs=1000)
 
