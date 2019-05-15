@@ -30,10 +30,11 @@ def cli():
 @click.option('-l', '--lrate', default=2e-4, help='initial learning rate')
 @click.option('--weight-decay', default=1e-5, help='weight decay')
 @click.option('-w', '--workers', default=0, help='number of workers loading training data')
+@click.option('--smooth/--no-smooth', default=False, help='enables smoothing of the targets in the data sets.')
 @click.option('-d', '--device', default='cpu', help='pytorch device')
 @click.option('-v', '--validation', default='val', help='validation set location')
 @click.argument('ground_truth', nargs=1)
-def train(name, load, lrate, weight_decay, workers, device, validation, ground_truth):
+def train(name, load, lrate, weight_decay, workers, smooth, device, validation, ground_truth):
 
     if not name:
         name = '{}_{}'.format(lrate, weight_decay)
@@ -41,9 +42,9 @@ def train(name, load, lrate, weight_decay, workers, device, validation, ground_t
 
     torch.set_num_threads(1)
 
-    train_set = BaselineSet(glob.glob('{}/**/*.seeds.png'.format(ground_truth), recursive=True))
+    train_set = BaselineSet(glob.glob('{}/**/*.seeds.png'.format(ground_truth), recursive=True), smooth=smooth)
     train_data_loader = DataLoader(dataset=train_set, num_workers=workers, batch_size=1, shuffle=True, pin_memory=True)
-    val_set = BaselineSet(glob.glob('{}/**/*.seeds.png'.format(validation), recursive=True))
+    val_set = BaselineSet(glob.glob('{}/**/*.seeds.png'.format(validation), recursive=True), smooth=smooth)
     val_data_loader = DataLoader(dataset=val_set, num_workers=workers, batch_size=1, pin_memory=True)
 
     click.echo('loading network')
@@ -67,10 +68,22 @@ def train(name, load, lrate, weight_decay, workers, device, validation, ground_t
         return torch.from_numpy(o.astype('f')).unsqueeze(0).unsqueeze(0).to(device), target.double().to(device)
 
     trainer = create_supervised_trainer(model, opti, criterion, device=device, non_blocking=True)
-    evaluator = create_supervised_evaluator(model, device=device, non_blocking=True, metrics={'accuracy': Accuracy(output_transform=output_preprocess),
-                                                                                              'precision': Precision(output_transform=output_preprocess),
-                                                                                              'recall': Recall(output_transform=output_preprocess),
-                                                                                              'loss': Loss(criterion)})
+    accuracy = Accuracy(output_transform=output_preprocess)
+    precision = Precision(output_transform=output_preprocess)
+    recall = Recall(output_transform=output_preprocess)
+    loss = Loss(criterion)
+    precision = Precision(average=False)
+    recall = Recall(average=False)
+    f1 = (precision * recall * 2 / (precision + recall)).mean()
+
+    evaluator = create_supervised_evaluator(model, device=device, non_blocking=True)
+
+    accuracy.attach(evaluator, 'accuracy')
+    precision.attach(evaluator, 'precision')
+    recall.attach(evaluator, 'recall')
+    loss.attach(evaluator, 'loss')
+    f1.attach(evaluator, 'f1')
+
     ckpt_handler = ModelCheckpoint('.', name, save_interval=1, n_saved=10, require_empty=False)
     RunningAverage(output_transform=lambda x: x).attach(trainer, 'loss')
 
@@ -84,8 +97,9 @@ def train(name, load, lrate, weight_decay, workers, device, validation, ground_t
     def log_validation_results(engine):
         evaluator.run(val_data_loader)
         metrics = evaluator.state.metrics
-        progress_bar.log_message('eval results - epoch {} loss: {:.4f} accuracy: {:.4f} recall: {:.4f} precision {:.4f}'.format(engine.state.epoch,
+        progress_bar.log_message('eval results - epoch {} loss: {:.4f} f1: {:.4f}, accuracy: {:.4f} recall: {:.4f} precision {:.4f}'.format(engine.state.epoch,
                                                                                                                    metrics['loss'],
+                                                                                                                   metrics['f1'],
                                                                                                                    metrics['accuracy'],
                                                                                                                    metrics['recall'],
                                                                                                                    metrics['precision']))
