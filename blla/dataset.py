@@ -27,8 +27,10 @@ class BaselineSet(data.Dataset):
 
         image = resize(image)
         target = resize(target)
-
-        target = Image.fromarray(gaussian_filter(((np.array(target) > 0) * 255).astype('uint8'), sigma=2))
+        target = ((np.array(target) > 0) * 255).astype('uint8')
+        if self.smooth:
+            target = gaussian_filter(target, sigma=2)
+        target = Image.fromarray(target)
         return normalize(tf.to_tensor(image.convert('RGB'))), tf.to_tensor(target)
 
     def __len__(self):
