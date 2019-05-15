@@ -54,7 +54,7 @@ def train(name, load, lrate, weight_decay, workers, smooth, device, validation, 
         click.echo('loading weights')
         model = torch.load(load, map_location=device)
 
-    criterion = nn.BCEWithLogitsLoss()
+    criterion = nn.MSELoss()
     opti = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lrate, weight_decay=weight_decay)
 
     def score_function(engine):
