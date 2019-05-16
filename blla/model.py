@@ -123,9 +123,8 @@ class ResUNet(nn.Module):
         self.upsample_3 = UnetDecoder(256, 128, 64)
         self.upsample_2 = UnetDecoder(128, 64, 64)
         self.upsample_1 = UnetDecoder(128, 64, 64)
-        self.rnn_stack = nn.Sequential(ReNet(67, 16), nn.Dropout(0.5))
+        self.rnn_stack = nn.Sequential(ReNet(64, 16), nn.Dropout(0.5))
         self.squash = nn.Conv2d(32, 1, kernel_size=1)
-
 
         self.nonlin = nn.Sigmoid()
         #self.init_weights()
@@ -145,7 +144,7 @@ class ResUNet(nn.Module):
         map_3 = self.dropout(self.upsample_3(torch.cat([map_3, map_4], 1), output_size=map_2.size()))
         map_2 = self.dropout(self.upsample_2(torch.cat([map_2, map_3], 1), output_size=map_1.size()))
         map_1 = self.dropout(self.upsample_1(torch.cat([map_1, map_2], 1), output_size=map_1.size()[:2] + siz[2:]))
-        o = self.rnn_stack(torch.cat([map_1, inputs], dim=1))
+        o = self.rnn_stack(map_1)
         return self.nonlin(self.squash(o))
 
     def init_weights(self):
