@@ -18,7 +18,7 @@ from ignite.engine import Engine, Events, create_supervised_trainer, create_supe
 
 from blla.model import ResUNet, RecLabelNet
 from blla.dataset import BaselineSet
-from blla.postprocess import denoising_hysteresis_thresh
+from blla.postprocess import denoising_hysteresis_thresh, vectorize_lines
 
 @click.group()
 def cli():
@@ -102,4 +102,42 @@ def train(name, load, lrate, weight_decay, workers, smooth, device, validation, 
                                                                                                                    r,
                                                                                                                    metrics['precision']))
     trainer.run(train_data_loader, max_epochs=1000)
+
+@cli.command()
+@click.option('-m', '--model', default=None, help='model file')
+@click.option('-d', '--device', default='cpu', help='pytorch device')
+@click.option('-c', '--context', default=80, help='context around baseline')
+@click.option('-t', '--thresholds', default=(0.3, 0.5), type=(float, float), help='thresholds for hysteresis thresholding')
+@click.option('-s', '--sigma', default=2.5, help='sigma of gaussian filter in postprocessing')
+@click.argument('images', nargs=-1)
+def pred(model, device, context, thresholds, sigma, images):
+    device = torch.device(device)
+    with open(model, 'rb') as fp:
+        m = torch.load(fp, map_location=device)
+
+    resize = transforms.Resize(1200)
+    transform = transforms.Compose([transforms.Resize(1200), transforms.ToTensor(), transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
+
+    with torch.no_grad():
+        for img in images:
+            print('transforming image {}'.format(img))
+            im = Image.open(img).convert('RGB')
+            norm_im = transform(im).to(device)
+            print('running forward pass')
+            o = m.forward(norm_im.unsqueeze(0))
+            o = torch.sigmoid(o)
+            cls = Image.fromarray((o.detach().squeeze().cpu().numpy()*255).astype('uint8')).resize(im.size, resample=Image.NEAREST)
+            cls.save(os.path.splitext(img)[0] + '_nonthresh.png')
+            o = denoising_hysteresis_thresh(o.detach().squeeze().cpu().numpy(), thresholds[0], thresholds[1], sigma)
+            cls = Image.fromarray((o*255).astype('uint8')).resize(im.size, resample=Image.NEAREST)
+            cls.save(os.path.splitext(img)[0] + '_thresh.png')
+            print('result extraction')
+            # running line vectorization
+            lines = vectorize_lines(np.array(cls))
+            overlay = Image.new('RGBA', im.size, (0, 0, 0, 0))
+            draw = ImageDraw.Draw(overlay)
+            for line in lines:
+                draw.line([tuple(x[::-1]) for x in line], width=10, fill=(0, 130, 200, 127))
+            del draw
+            Image.alpha_composite(im.convert('RGBA'), overlay).save('{}_overlay.png'.format(os.path.splitext(img)[0]))
 
