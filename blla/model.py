@@ -63,7 +63,8 @@ class RecLabelNet(nn.Module):
                                    nn.GroupNorm(32, 32),
                                    nn.LeakyReLU(negative_slope=0.1),
                                    ReNet(32, 32),
-                                   nn.Conv2d(64, 1, 1, bias=False))
+                                   nn.Conv2d(64, 1, 1, bias=False),
+                                   nn.Sigmoid())
 
     def forward(self, x):
         siz = x.size()
