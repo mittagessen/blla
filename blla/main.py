@@ -35,7 +35,7 @@ def cli():
 @click.option('--smooth/--no-smooth', default=False, help='enables smoothing of the targets in the data sets.')
 @click.option('-d', '--device', default='cpu', help='pytorch device')
 @click.option('-v', '--validation', default='val', help='validation set location')
-@click.option('-t', '--arch', default='RecLabelNet', type=click.Choice(['ResUNet', 'RecLabelNet']))
+@click.option('-t', '--arch', default='RecLabelNet', type=click.Choice(['RecResUNet', 'ResUNet', 'RecLabelNet']))
 @click.option('--loss', default='MSELoss', type=click.Choice(['MSELoss', 'BCELoss']))
 @click.argument('ground_truth', nargs=1)
 def train(name, load, lrate, weight_decay, workers, smooth, device, validation, arch, loss, ground_truth):

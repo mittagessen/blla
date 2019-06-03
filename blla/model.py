@@ -154,3 +154,11 @@ class ResUNet(nn.Module):
 
     def init_weights(self):
         pass
+
+class RecResUNet(ResUNet):
+    """
+    ResNet-34 encoder + U-Net decoder + RNN
+    """
+    def __init__(self, refine_encoder=False, sigmoid=True):
+        super().__init__(refine_encoder=refine_encoder, sigmoid=sigmoid, rnn=True)
+
