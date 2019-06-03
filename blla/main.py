@@ -52,7 +52,7 @@ def train(name, load, lrate, weight_decay, workers, smooth, device, validation, 
     val_data_loader = DataLoader(dataset=val_set, num_workers=workers, batch_size=1, pin_memory=True)
 
     click.echo('loading network')
-    net = getattr(model, arch)(sigmoid=False if loss == 'BCELoss' else True)
+    net = getattr(model, arch)()
 
     if load:
         click.echo('loading weights')
@@ -67,8 +67,6 @@ def train(name, load, lrate, weight_decay, workers, smooth, device, validation, 
 
     def output_preprocess(output):
         o, target = output
-        if loss == 'BCELoss':
-            o = F.sigmoid(o)
         o = denoising_hysteresis_thresh(o.detach().squeeze().cpu().numpy(), 0.4, 0.5, 0)
         return torch.from_numpy(o.astype('f')).unsqueeze(0).unsqueeze(0).to(device), target.double().to(device)
 

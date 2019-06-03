@@ -47,7 +47,7 @@ class RecLabelNet(nn.Module):
     """
     separable recurrent net for baseline labeling.
     """
-    def __init__(self, sigmoid=True):
+    def __init__(self):
         super().__init__()
         self.label = nn.Sequential(nn.Conv2d(3, 64, 3, padding=1, bias=False),
                                    nn.GroupNorm(32, 64),
@@ -63,9 +63,8 @@ class RecLabelNet(nn.Module):
                                    nn.GroupNorm(32, 32),
                                    nn.LeakyReLU(negative_slope=0.1),
                                    ReNet(32, 32),
-                                   nn.Conv2d(64, 1, 1, bias=False))
-        if sigmoid:
-            self.label.add_module('sigmoid', nn.Sigmoid())
+                                   nn.Conv2d(64, 1, 1, bias=False),
+                                   nn.Sigmoid())
 
     def forward(self, x):
         siz = x.size()
@@ -111,7 +110,7 @@ class ResUNet(nn.Module):
     """
     ResNet-34 encoder + U-Net decoder
     """
-    def __init__(self, refine_encoder=False, sigmoid=True, rnn=False):
+    def __init__(self, refine_encoder=False, rnn=False):
         super().__init__()
         self.resnet = models.resnet34(pretrained=True)
         if not refine_encoder:
@@ -132,8 +131,7 @@ class ResUNet(nn.Module):
             self.rnn_stack.add_module('squash', nn.Conv2d(32, 1, kernel_size=1))
         else:
             self.rnn_stack.add_module('squash', nn.Conv2d(64, 1, kernel_size=1))
-        if sigmoid:
-            self.rnn_stack.add_module('sigmoid', nn.Sigmoid())
+        self.rnn_stack.add_module('sigmoid', nn.Sigmoid())
 
     def forward(self, inputs):
         siz = inputs.size()
@@ -159,6 +157,6 @@ class RecResUNet(ResUNet):
     """
     ResNet-34 encoder + U-Net decoder + RNN
     """
-    def __init__(self, refine_encoder=False, sigmoid=True):
-        super().__init__(refine_encoder=refine_encoder, sigmoid=sigmoid, rnn=True)
+    def __init__(self, refine_encoder=False):
+        super().__init__(refine_encoder=refine_encoder, rnn=True)
 
