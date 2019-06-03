@@ -5,6 +5,8 @@ import glob
 import json
 import click
 import torch
+import numpy as np
+import torch.nn.functional as F
 
 from torch import nn, optim
 from PIL import Image, ImageDraw
@@ -16,7 +18,7 @@ from ignite.handlers import ModelCheckpoint, TerminateOnNan
 from ignite.metrics import Accuracy, Precision, Recall, RunningAverage, Loss
 from ignite.engine import Engine, Events, create_supervised_trainer, create_supervised_evaluator
 
-from blla.model import ResUNet, RecLabelNet
+from blla import model
 from blla.dataset import BaselineSet
 from blla.postprocess import denoising_hysteresis_thresh, vectorize_lines
 
@@ -33,8 +35,10 @@ def cli():
 @click.option('--smooth/--no-smooth', default=False, help='enables smoothing of the targets in the data sets.')
 @click.option('-d', '--device', default='cpu', help='pytorch device')
 @click.option('-v', '--validation', default='val', help='validation set location')
+@click.option('-t', '--arch', default='RecLabelNet', type=click.Choice(['ResUNet', 'RecLabelNet']))
+@click.option('--loss', default='MSELoss', type=click.Choice(['MSELoss', 'BCELoss']))
 @click.argument('ground_truth', nargs=1)
-def train(name, load, lrate, weight_decay, workers, smooth, device, validation, ground_truth):
+def train(name, load, lrate, weight_decay, workers, smooth, device, validation, arch, loss, ground_truth):
 
     if not name:
         name = '{}_{}'.format(lrate, weight_decay)
@@ -48,14 +52,14 @@ def train(name, load, lrate, weight_decay, workers, smooth, device, validation, 
     val_data_loader = DataLoader(dataset=val_set, num_workers=workers, batch_size=1, pin_memory=True)
 
     click.echo('loading network')
-    model = RecLabelNet().to(device)
+    net = getattr(model, arch)(sigmoid=False if loss == 'BCELoss' else True)
 
     if load:
         click.echo('loading weights')
-        model = torch.load(load, map_location=device)
+        net = torch.load(load, map_location=device)
 
-    criterion = nn.MSELoss()
-    opti = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lrate, weight_decay=weight_decay)
+    criterion = getattr(nn, loss)()
+    opti = optim.Adam(filter(lambda p: p.requires_grad, net.parameters()), lr=lrate, weight_decay=weight_decay)
 
     def score_function(engine):
         val_loss = engine.state.metrics['loss']
@@ -63,15 +67,17 @@ def train(name, load, lrate, weight_decay, workers, smooth, device, validation, 
 
     def output_preprocess(output):
         o, target = output
+        if loss == 'BCELoss':
+            o = F.sigmoid(o)
         o = denoising_hysteresis_thresh(o.detach().squeeze().cpu().numpy(), 0.4, 0.5, 0)
         return torch.from_numpy(o.astype('f')).unsqueeze(0).unsqueeze(0).to(device), target.double().to(device)
 
-    trainer = create_supervised_trainer(model, opti, criterion, device=device, non_blocking=True)
+    trainer = create_supervised_trainer(net, opti, criterion, device=device, non_blocking=True)
     accuracy = Accuracy(output_transform=output_preprocess)
     precision = Precision(output_transform=output_preprocess)
     recall = Recall(output_transform=output_preprocess)
     loss = Loss(criterion)
-    evaluator = create_supervised_evaluator(model, device=device, non_blocking=True)
+    evaluator = create_supervised_evaluator(net, device=device, non_blocking=True)
 
     accuracy.attach(evaluator, 'accuracy')
     precision.attach(evaluator, 'precision')
@@ -84,7 +90,7 @@ def train(name, load, lrate, weight_decay, workers, smooth, device, validation, 
     progress_bar = ProgressBar(persist=True)
     progress_bar.attach(trainer, ['loss'])
 
-    trainer.add_event_handler(event_name=Events.EPOCH_COMPLETED, handler=ckpt_handler, to_save={'net': model})
+    trainer.add_event_handler(event_name=Events.EPOCH_COMPLETED, handler=ckpt_handler, to_save={'net': net})
     trainer.add_event_handler(event_name=Events.ITERATION_COMPLETED, handler=TerminateOnNan())
 
     @trainer.on(Events.EPOCH_COMPLETED)
@@ -125,7 +131,6 @@ def pred(model, device, context, thresholds, sigma, images):
             norm_im = transform(im).to(device)
             print('running forward pass')
             o = m.forward(norm_im.unsqueeze(0))
-            o = torch.sigmoid(o)
             cls = Image.fromarray((o.detach().squeeze().cpu().numpy()*255).astype('uint8')).resize(im.size, resample=Image.NEAREST)
             cls.save(os.path.splitext(img)[0] + '_nonthresh.png')
             o = denoising_hysteresis_thresh(o.detach().squeeze().cpu().numpy(), thresholds[0], thresholds[1], sigma)

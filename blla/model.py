@@ -47,7 +47,7 @@ class RecLabelNet(nn.Module):
     """
     separable recurrent net for baseline labeling.
     """
-    def __init__(self):
+    def __init__(self, sigmoid=True):
         super().__init__()
         self.label = nn.Sequential(nn.Conv2d(3, 64, 3, padding=1, bias=False),
                                    nn.GroupNorm(32, 64),
@@ -63,8 +63,9 @@ class RecLabelNet(nn.Module):
                                    nn.GroupNorm(32, 32),
                                    nn.LeakyReLU(negative_slope=0.1),
                                    ReNet(32, 32),
-                                   nn.Conv2d(64, 1, 1, bias=False),
-                                   nn.Sigmoid())
+                                   nn.Conv2d(64, 1, 1, bias=False))
+        if sigmoid:
+            self.label.add_module('sigmoid', nn.Sigmoid())
 
     def forward(self, x):
         siz = x.size()
@@ -110,7 +111,7 @@ class ResUNet(nn.Module):
     """
     ResNet-34 encoder + U-Net decoder
     """
-    def __init__(self, refine_encoder=False):
+    def __init__(self, refine_encoder=False, sigmoid=True, rnn=False):
         super().__init__()
         self.resnet = models.resnet34(pretrained=True)
         if not refine_encoder:
@@ -124,11 +125,15 @@ class ResUNet(nn.Module):
         self.upsample_3 = UnetDecoder(256, 128, 64)
         self.upsample_2 = UnetDecoder(128, 64, 64)
         self.upsample_1 = UnetDecoder(128, 64, 64)
-        self.rnn_stack = nn.Sequential(ReNet(64, 16), nn.Dropout(0.5))
-        self.squash = nn.Conv2d(32, 1, kernel_size=1)
-
-        self.nonlin = nn.Sigmoid()
-        #self.init_weights()
+        self.rnn_stack = nn.Sequential()
+        if rnn:
+            self.rnn_stack.add_module('rnn', ReNet(64, 16))
+            self.rnn_stack.add_module('dropout', nn.Dropout(0.5))
+            self.rnn_stack.add_module('squash', nn.Conv2d(32, 1, kernel_size=1))
+        else:
+            self.rnn_stack.add_module('squash', nn.Conv2d(64, 1, kernel_size=1))
+        if sigmoid:
+            self.rnn_stack.add_module('sigmoid', nn.Sigmoid())
 
     def forward(self, inputs):
         siz = inputs.size()
@@ -145,8 +150,7 @@ class ResUNet(nn.Module):
         map_3 = self.dropout(self.upsample_3(torch.cat([map_3, map_4], 1), output_size=map_2.size()))
         map_2 = self.dropout(self.upsample_2(torch.cat([map_2, map_3], 1), output_size=map_1.size()))
         map_1 = self.dropout(self.upsample_1(torch.cat([map_1, map_2], 1), output_size=map_1.size()[:2] + siz[2:]))
-        o = self.rnn_stack(map_1)
-        return self.nonlin(self.squash(o))
+        return self.rnn_stack(map_1)
 
     def init_weights(self):
         pass
