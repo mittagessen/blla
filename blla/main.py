@@ -107,7 +107,7 @@ def train(name, load, lrate, weight_decay, workers, smooth, device, validation, 
                                                                                                                    p,
                                                                                                                    r,
                                                                                                                    metrics['precision']))
-    trainer.run(train_data_loader, max_epochs=1000)
+    trainer.run(train_data_loader, max_epochs=200)
 
 @cli.command()
 @click.option('-m', '--model', default=None, help='model file')
