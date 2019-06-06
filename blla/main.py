@@ -46,9 +46,9 @@ def train(name, load, lrate, weight_decay, workers, smooth, device, validation, 
 
     torch.set_num_threads(1)
 
-    train_set = BaselineSet(glob.glob('{}/**/*.seeds.png'.format(ground_truth), recursive=True), smooth=smooth)
+    train_set = BaselineSet(glob.glob('{}/**/*.plain.png'.format(ground_truth), recursive=True), smooth=smooth)
     train_data_loader = DataLoader(dataset=train_set, num_workers=workers, batch_size=1, shuffle=True, pin_memory=True)
-    val_set = BaselineSet(glob.glob('{}/**/*.seeds.png'.format(validation), recursive=True), smooth=False)
+    val_set = BaselineSet(glob.glob('{}/**/*.plain.png'.format(validation), recursive=True), smooth=False)
     val_data_loader = DataLoader(dataset=val_set, num_workers=workers, batch_size=1, pin_memory=True)
 
     click.echo('loading network')
