@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import os
 import glob
 import json
 import click
@@ -8,6 +7,7 @@ import torch
 import numpy as np
 import torch.nn.functional as F
 
+from os import path
 from torch import nn, optim
 from PIL import Image, ImageDraw
 from torchvision import transforms
@@ -112,9 +112,12 @@ def train(name, load, lrate, weight_decay, workers, smooth, device, validation, 
 @click.option('-d', '--device', default='cpu', help='pytorch device')
 @click.option('-c', '--context', default=80, help='context around baseline')
 @click.option('-t', '--thresholds', default=(0.3, 0.5), type=(float, float), help='thresholds for hysteresis thresholding')
-@click.option('-s', '--sigma', default=2.5, help='sigma of gaussian filter in postprocessing')
+@click.option('-s', '--sigma', default=1.5, help='sigma of gaussian filter in postprocessing')
 @click.argument('images', nargs=-1)
 def pred(model, device, context, thresholds, sigma, images):
+    """
+    Run inference on some document images
+    """
     device = torch.device(device)
     with open(model, 'rb') as fp:
         m = torch.load(fp, map_location=device)
@@ -130,10 +133,10 @@ def pred(model, device, context, thresholds, sigma, images):
             print('running forward pass')
             o = m.forward(norm_im.unsqueeze(0))
             cls = Image.fromarray((o.detach().squeeze().cpu().numpy()*255).astype('uint8')).resize(im.size, resample=Image.NEAREST)
-            cls.save(os.path.splitext(img)[0] + '_nonthresh.png')
+            cls.save(path.splitext(img)[0] + '_nonthresh.png')
             o = denoising_hysteresis_thresh(o.detach().squeeze().cpu().numpy(), thresholds[0], thresholds[1], sigma)
             cls = Image.fromarray((o*255).astype('uint8')).resize(im.size, resample=Image.NEAREST)
-            cls.save(os.path.splitext(img)[0] + '_thresh.png')
+            cls.save(path.splitext(img)[0] + '_thresh.png')
             print('result extraction')
             # running line vectorization
             lines = vectorize_lines(np.array(cls))
@@ -142,5 +145,19 @@ def pred(model, device, context, thresholds, sigma, images):
             for line in lines:
                 draw.line([tuple(x[::-1]) for x in line], width=10, fill=(0, 130, 200, 127))
             del draw
-            Image.alpha_composite(im.convert('RGBA'), overlay).save('{}_overlay.png'.format(os.path.splitext(img)[0]))
+            Image.alpha_composite(im.convert('RGBA'), overlay).save('{}_overlay.png'.format(path.splitext(img)[0]))
 
+@cli.command()
+@click.argument('ground_truth', nargs=-1)
+def convert(ground_truth):
+    """
+    Converts old-style ground truth (pixel maps) to new-style line coordinate
+    lists.
+    """
+    for pmap in ground_truth:
+        js = '{}.path'.format(path.splitext(path.splitext(pmap)[0])[0])
+        print('transforming {} to {}'.format(pmap, path.basename(js)))
+        im = np.array(Image.open(pmap))
+        lines = vectorize_lines(im)
+        with open(js, 'w') as fp:
+            json.dump(lines, fp)
