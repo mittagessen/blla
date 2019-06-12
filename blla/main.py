@@ -88,7 +88,7 @@ def train(name, load, lrate, weight_decay, workers, smooth, device, validation, 
     progress_bar = ProgressBar(persist=True)
     progress_bar.attach(trainer, ['loss'])
 
-    trainer.add_event_handler(event_name=Events.EPOCH_COMPLETED, handler=ckpt_handler, to_save={'net': net})
+    trainer.add_event_handler(event_name=Events.EPOCH_COMPLETED, handler=ckpt_handler, to_save={'loss': criterion, 'type': arch, 'net': net})
     trainer.add_event_handler(event_name=Events.ITERATION_COMPLETED, handler=TerminateOnNan())
 
     @trainer.on(Events.EPOCH_COMPLETED)
@@ -108,19 +108,21 @@ def train(name, load, lrate, weight_decay, workers, smooth, device, validation, 
     trainer.run(train_data_loader, max_epochs=200)
 
 @cli.command()
-@click.option('-m', '--model', default=None, help='model file')
+@click.option('-m', '--net', default=None, help='model file')
 @click.option('-d', '--device', default='cpu', help='pytorch device')
 @click.option('-c', '--context', default=80, help='context around baseline')
 @click.option('-t', '--thresholds', default=(0.3, 0.5), type=(float, float), help='thresholds for hysteresis thresholding')
 @click.option('-s', '--sigma', default=1.5, help='sigma of gaussian filter in postprocessing')
 @click.argument('images', nargs=-1)
-def pred(model, device, context, thresholds, sigma, images):
+def pred(net, device, context, thresholds, sigma, images):
     """
     Run inference on some document images
     """
     device = torch.device(device)
     with open(model, 'rb') as fp:
-        m = torch.load(fp, map_location=device)
+        state_dict = torch.load(fp, map_location=device)
+    m = getattr(model, state_dict['type'])()
+    m.load_state_dict(state_dict['net'])
 
     resize = transforms.Resize(1200)
     transform = transforms.Compose([transforms.Resize(1200), transforms.ToTensor(), transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
