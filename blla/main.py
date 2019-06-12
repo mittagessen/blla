@@ -83,7 +83,7 @@ def train(name, load, lrate, weight_decay, workers, smooth, device, validation, 
     loss.attach(evaluator, 'loss')
 
     ckpt_handler = ModelCheckpoint('.', name, save_interval=1, n_saved=100,
-                                   require_empty=False, save_state_dict=False)
+                                   require_empty=False, save_as_state_dict=False)
     RunningAverage(output_transform=lambda x: x).attach(trainer, 'loss')
 
     progress_bar = ProgressBar(persist=True)
