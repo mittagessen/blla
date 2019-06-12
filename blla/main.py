@@ -88,7 +88,13 @@ def train(name, load, lrate, weight_decay, workers, smooth, device, validation, 
     progress_bar = ProgressBar(persist=True)
     progress_bar.attach(trainer, ['loss'])
 
-    trainer.add_event_handler(event_name=Events.EPOCH_COMPLETED, handler=ckpt_handler, to_save={'loss': criterion, 'type': arch, 'net': net})
+    save_dict = {'model': model}
+
+    def save_params(engine, save_dict):
+        save_dict['type'] = arch
+        handler(engine, save_dict)
+
+    trainer.add_event_handler(Events.EPOCH_COMPLETED, save_params)
     trainer.add_event_handler(event_name=Events.ITERATION_COMPLETED, handler=TerminateOnNan())
 
     @trainer.on(Events.EPOCH_COMPLETED)
