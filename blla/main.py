@@ -89,7 +89,7 @@ def train(name, load, lrate, weight_decay, workers, smooth, device, validation, 
     progress_bar = ProgressBar(persist=True)
     progress_bar.attach(trainer, ['loss'])
 
-    trainer.add_event_handler(Events.EPOCH_COMPLETED, ckpt_handler, {'model': model})
+    trainer.add_event_handler(Events.EPOCH_COMPLETED, ckpt_handler, {'model': net})
     trainer.add_event_handler(event_name=Events.ITERATION_COMPLETED, handler=TerminateOnNan())
 
     @trainer.on(Events.EPOCH_COMPLETED)
