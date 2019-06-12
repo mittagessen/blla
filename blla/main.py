@@ -82,19 +82,14 @@ def train(name, load, lrate, weight_decay, workers, smooth, device, validation, 
     recall.attach(evaluator, 'recall')
     loss.attach(evaluator, 'loss')
 
-    ckpt_handler = ModelCheckpoint('.', name, save_interval=1, n_saved=100, require_empty=False)
+    ckpt_handler = ModelCheckpoint('.', name, save_interval=1, n_saved=100,
+                                   require_empty=False, save_state_dict=False)
     RunningAverage(output_transform=lambda x: x).attach(trainer, 'loss')
 
     progress_bar = ProgressBar(persist=True)
     progress_bar.attach(trainer, ['loss'])
 
-    save_dict = {'model': model}
-
-    def save_params(engine, save_dict):
-        save_dict['type'] = arch
-        handler(engine, save_dict)
-
-    trainer.add_event_handler(Events.EPOCH_COMPLETED, save_params)
+    trainer.add_event_handler(Events.EPOCH_COMPLETED, ckpt_handler, {'model': model})
     trainer.add_event_handler(event_name=Events.ITERATION_COMPLETED, handler=TerminateOnNan())
 
     @trainer.on(Events.EPOCH_COMPLETED)
@@ -126,9 +121,7 @@ def pred(net, device, context, thresholds, sigma, images):
     """
     device = torch.device(device)
     with open(model, 'rb') as fp:
-        state_dict = torch.load(fp, map_location=device)
-    m = getattr(model, state_dict['type'])()
-    m.load_state_dict(state_dict['net'])
+        m = torch.load(fp, map_location=device)
 
     resize = transforms.Resize(1200)
     transform = transforms.Compose([transforms.Resize(1200), transforms.ToTensor(), transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
