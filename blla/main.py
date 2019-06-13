@@ -120,8 +120,9 @@ def pred(net, device, context, thresholds, sigma, images):
     Run inference on some document images
     """
     device = torch.device(device)
-    with open(model, 'rb') as fp:
-        m = torch.load(fp, map_location=device)
+    m = model.RecLabelNet()
+    with open(net, 'rb') as fp:
+        m.load_state_dict(torch.load(fp, map_location=device))
 
     resize = transforms.Resize(1200)
     transform = transforms.Compose([transforms.Resize(1200), transforms.ToTensor(), transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
@@ -160,5 +161,8 @@ def convert(ground_truth):
         print('transforming {} to {}'.format(pmap, path.basename(js)))
         im = np.array(Image.open(pmap))
         lines = vectorize_lines(im)
+        l = []
+        for line in lines:
+            l.append([(x[1], x[0]) for x in line])
         with open(js, 'w') as fp:
-            json.dump(lines, fp)
+            json.dump(l, fp)
