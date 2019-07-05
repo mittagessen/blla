@@ -120,9 +120,8 @@ def pred(net, device, context, thresholds, sigma, images):
     Run inference on some document images
     """
     device = torch.device(device)
-    m = model.RecLabelNet()
     with open(net, 'rb') as fp:
-        m.load_state_dict(torch.load(fp, map_location=device))
+        m = torch.load(net, map_location=device)
 
     resize = transforms.Resize(1200)
     transform = transforms.Compose([transforms.Resize(1200), transforms.ToTensor(), transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
